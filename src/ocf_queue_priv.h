@@ -17,6 +17,9 @@ struct ocf_queue {
 	struct list_head io_list;
 	env_spinlock io_list_lock;
 
+	/* Tracing reference counter */
+	env_atomic64 trace_ref_cntr;
+
 	void *priv;
 };
 
