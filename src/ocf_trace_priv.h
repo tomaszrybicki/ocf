@@ -14,7 +14,7 @@
 
 static inline uint64_t ocf_trace_seq_id(ocf_cache_t cache)
 {
-	return env_atomic64_inc_return(&cache->trace_seq_ref);
+	return env_atomic64_inc_return(&cache->trace.trace_seq_ref);
 }
 
 static inline void ocf_trace_init_io(struct ocf_core_io *io)
@@ -26,7 +26,7 @@ static inline void ocf_trace_init_io(struct ocf_core_io *io)
 }
 
 static inline void ocf_trace_prep_io_event(struct ocf_event_io *ev,
-		struct ocf_core_io *io, ocf_event_io_dir_t dir)
+		struct ocf_core_io *io, ocf_event_operation_t operation)
 {
 	struct ocf_request *rq = io->req;
 
@@ -34,13 +34,13 @@ static inline void ocf_trace_prep_io_event(struct ocf_event_io *ev,
 		io->timestamp, sizeof(*ev));
 
 	ev->lba = rq->byte_position >> SECTOR_SHIFT;
-	if (ocf_event_io_dir_discard == dir) {
-		ev->len = rq->discard.nr_sects;
+	if (ocf_event_operation_discard == operation) {
+		ev->len = rq->discard.nr_sects << SECTOR_SHIFT;
 	} else {
-		ev->len = rq->byte_length >> SECTOR_SHIFT;
+		ev->len = rq->byte_length;
 	}
 
-	ev->dir = dir;
+	ev->dir = operation;
 	ev->core_id = rq->core_id;
 
 	ev->io_class = rq->io->io_class;
@@ -49,14 +49,14 @@ static inline void ocf_trace_prep_io_event(struct ocf_event_io *ev,
 static inline void ocf_trace_push(ocf_cache_t cache, uint32_t io_queue,
 	void *trace, uint32_t size)
 {
-	if (!env_atomic_read(&cache->stop_trace_pending)) {
+	if (!env_atomic_read(&cache->trace.stop_trace_pending)) {
 		env_atomic64_inc(&cache->io_queues[io_queue].trace_ref_cntr);
 
 		//Double stop_trace_pending flag check prevents from using
 		//callback when traces are being stopped
-		if (!env_atomic_read(&cache->stop_trace_pending) &&
-			cache->trace_callback) {
-			cache->trace_callback(cache, cache->trace_ctx,
+		if (!env_atomic_read(&cache->trace.stop_trace_pending) &&
+			cache->trace.trace_callback) {
+			cache->trace.trace_callback(cache, cache->trace.trace_ctx,
 				io_queue, trace, size);
 		}
 
@@ -64,13 +64,13 @@ static inline void ocf_trace_push(ocf_cache_t cache, uint32_t io_queue,
 	}
 }
 
-static inline void ocf_trace_io(struct ocf_core_io *io, ocf_event_io_dir_t dir)
+static inline void ocf_trace_io(struct ocf_core_io *io, ocf_event_operation_t dir)
 {
 	struct ocf_event_io ev;
 	struct ocf_request *rq;
 	ocf_cache_t cache = ocf_core_get_cache(io->core);
 
-	if (!cache->trace_callback)
+	if (!cache->trace.trace_callback)
 		return;
 
 	rq  = io->req;
@@ -85,7 +85,7 @@ static inline void ocf_trace_io_cmpl(struct ocf_core_io *io)
 	struct ocf_request *rq;
 	ocf_cache_t cache = ocf_core_get_cache(io->core);
 
-	if (!cache->trace_callback)
+	if (!cache->trace.trace_callback)
 		return;
 
 	rq = io->req;

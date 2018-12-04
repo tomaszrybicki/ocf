@@ -27,7 +27,7 @@ static int _ocf_core_desc(ocf_core_t core, void  *ctx)
 			sizeof(core_desc));
 	core_desc.id = ocf_core_get_id(core);
 	core_desc.core_size = ocf_data_obj_get_length(
-			ocf_core_get_data_object(core)) >> SECTOR_SHIFT;
+			ocf_core_get_data_object(core));
 
 	ocf_trace_push(cache, visitor_ctx->io_queue,
 		&core_desc, sizeof(core_desc));
@@ -47,8 +47,15 @@ static int _ocf_trace_desc(ocf_cache_t cache, uint32_t io_queue)
 	cache_desc.id = ocf_cache_get_id(cache);
 	cache_desc.cache_line_size = ocf_cache_get_line_size(cache);
 	cache_desc.cache_mode = ocf_cache_get_mode(cache);
-	cache_desc.cache_size = ocf_data_obj_get_length(
-		ocf_cache_get_data_object(cache)) >> SECTOR_SHIFT;
+
+	if (ocf_cache_is_device_attached(cache)) {
+		/* Detached cache */
+		cache_desc.cache_size = ocf_data_obj_get_length(
+				ocf_cache_get_data_object(cache));
+	} else {
+		cache_desc.cache_size = 0;
+	}
+
 	cache_desc.cores_no = ocf_cache_get_core_count(cache);
 	cache_desc.version = OCF_EVENT_VERSION;
 	cache_desc.io_queues_no = cache->io_queues_no;
@@ -79,7 +86,7 @@ int ocf_mgnt_start_trace(ocf_cache_t cache, void *trace_ctx,
 	if (result)
 		return result;
 
-	if (cache->trace_callback) {
+	if (cache->trace.trace_callback) {
 		ocf_log(cache->owner, log_err,
 			"Tracing already started for cache %u\n",
 			ocf_cache_get_id(cache));
@@ -87,8 +94,8 @@ int ocf_mgnt_start_trace(ocf_cache_t cache, void *trace_ctx,
 		return -EINVAL;
 	}
 
-	cache->trace_callback = trace_callback;
-	cache->trace_ctx = trace_ctx;
+	cache->trace.trace_callback = trace_callback;
+	cache->trace.trace_ctx = trace_ctx;
 
 	for (i = 0; i < cache->io_queues_no; i++) {
 		result = _ocf_trace_desc(cache, i);
@@ -103,7 +110,7 @@ int ocf_mgnt_start_trace(ocf_cache_t cache, void *trace_ctx,
 	return result;
 
 trace_deinit:
-	cache->trace_callback = NULL;
+	cache->trace.trace_callback = NULL;
 	ocf_mngt_cache_unlock(cache);
 
 	return result;
@@ -119,7 +126,7 @@ int ocf_mgnt_stop_trace(ocf_cache_t cache)
 	if (result)
 		return result;
 
-	if (!cache->trace_callback) {
+	if (!cache->trace.trace_callback) {
 		ocf_log(cache->owner, log_err,
 			"Tracing not started for cache %u\n",
 			ocf_cache_get_id(cache));
@@ -127,7 +134,7 @@ int ocf_mgnt_stop_trace(ocf_cache_t cache)
 		return -EINVAL;
 	}
 
-	env_atomic_inc(&cache->stop_trace_pending);
+	env_atomic_inc(&cache->trace.stop_trace_pending);
 
 	//Poll for all ongoing traces completion
 	do  {
@@ -153,11 +160,11 @@ int ocf_mgnt_stop_trace(ocf_cache_t cache)
 		goto exit;
 	}
 
-	cache->trace_callback = NULL;
-	cache->trace_ctx = NULL;
+	cache->trace.trace_callback = NULL;
+	cache->trace.trace_ctx = NULL;
 
 exit:
-	env_atomic_dec(&cache->stop_trace_pending);
+	env_atomic_dec(&cache->trace.stop_trace_pending);
 	ocf_mngt_cache_unlock(cache);
 
 	return result;

@@ -16,19 +16,19 @@ typedef uint64_t log_sid_t;
 typedef enum {
 	/** IO trace description, this event is pushed first to indicate version
 	 * of traces, number of cores and provides details about cache */
-	ocf_event_type_cache_desc = 0x00,
+	ocf_event_type_cache_desc,
 
 	/** Event describing ocf core */
-	ocf_event_type_core_desc = 0x01,
+	ocf_event_type_core_desc,
 
 	/** IO */
-	ocf_event_type_io = 'Q',
+	ocf_event_type_io,
 
 	/** IO completion */
-	ocf_event_type_io_cmpl = 'C',
+	ocf_event_type_io_cmpl,
 
 	/** IO in file domain */
-	ocf_event_type_io_file = 'F',
+	ocf_event_type_io_file,
 } ocf_event_type;
 
 /**
@@ -48,6 +48,15 @@ struct ocf_event_hdr {
 	uint32_t size;
 };
 
+/**
+ * @brief Initialize OCF trace event header
+ *
+ * @param[out] hdr OCF trace event header
+ * @param[in] type Type of OCF trace event
+ * @param[in] sid Event sequence id
+ * @param[in] timestamp Timestamp
+ * @param[in] size Size of event
+ */
 static inline void ocf_event_init_hdr(struct ocf_event_hdr *hdr,
 		ocf_event_type type, uint64_t sid, uint64_t timestamp,
 		uint32_t size)
@@ -74,7 +83,7 @@ struct ocf_event_cache_desc {
 	/** Cache mode */
 	ocf_cache_mode_t cache_mode;
 
-	/** Cache size in sectors */
+	/** Cache size in bytes*/
 	uint64_t cache_size;
 
 	/** Number of cores */
@@ -97,24 +106,24 @@ struct ocf_event_core_desc {
 	/** Core Id */
 	ocf_core_id_t id;
 
-	/** Core size in sectors */
+	/** Core size in bytes */
 	uint64_t core_size;
 };
 
-/** @brief IO operation direction */
+/** @brief IO operation */
 typedef enum {
 	/** Read */
-	ocf_event_io_dir_rd = 'R',
+	ocf_event_operation_rd = 'R',
 
 	/** Write */
-	ocf_event_io_dir_wr = 'W',
+	ocf_event_operation_wr = 'W',
 
 	/** Flush */
-	ocf_event_io_dir_flush = 'F',
+	ocf_event_operation_flush = 'F',
 
 	/** Discard */
-	ocf_event_io_dir_discard = 'D',
-} ocf_event_io_dir_t;
+	ocf_event_operation_discard = 'D',
+} ocf_event_operation_t;
 
 /**
  * @brief IO trace event
@@ -126,17 +135,17 @@ struct ocf_event_io {
 	/** Address of IO in sectors */
 	uint64_t lba;
 
-	/** Size of IO in sectors */
+	/** Size of IO in bytes */
 	uint32_t len;
 
 	/** IO class of IO */
 	uint32_t io_class;
 
 	/** Core ID */
-	uint32_t core_id;
+	ocf_core_id_t core_id;
 
 	/** Operation type: read, write, trim or flush **/
-	ocf_event_io_dir_t dir;
+	ocf_event_operation_t dir;
 };
 
 /**
@@ -154,7 +163,7 @@ struct ocf_event_io_cmpl {
 };
 
 
-/* @brief Push log callback.
+/** @brief Push log callback.
  *
  * @param[in] cache OCF cache
  * @param[in] trace_ctx Tracing context
@@ -190,5 +199,20 @@ int ocf_mgnt_start_trace(ocf_cache_t cache, void *trace_ctx,
  * @retval Non-zero Error
  */
 int ocf_mgnt_stop_trace(ocf_cache_t cache);
+
+/**
+ * @brief Structure used for aggregating trace-related ocf_cache fields
+ */
+struct ocf_trace {
+    /* Placeholder for push_event callback */
+	ocf_trace_callback_t trace_callback;
+
+	/* Telemetry context */
+	void *trace_ctx;
+
+	env_atomic stop_trace_pending;
+
+	env_atomic64 trace_seq_ref;
+};
 
 #endif /* __OCF_TRACE_H__ */
