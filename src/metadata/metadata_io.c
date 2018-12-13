@@ -32,7 +32,8 @@
 #define OCF_DEBUG_PARAM(cache, format, ...)
 #endif
 
-static void metadata_io_write_i_end_asynch(void *private_data, int error);
+static void metadata_io_write_i_asynch_end(struct metadata_io_request *request,
+		int error);
 static int ocf_restart_meta_io(struct ocf_request *req);
 
 static struct ocf_io_if meta_restart_if = {
@@ -146,6 +147,13 @@ int metadata_io_read_i_atomic(struct ocf_cache *cache,
 	return result;
 }
 
+static void metadata_io_write_i_asynch_cmpl(struct ocf_io *io, int error)
+{
+	struct metadata_io_request *request = io->priv1;
+
+	metadata_io_write_i_asynch_end(request, error);
+}
+
 static int ocf_restart_meta_io(struct ocf_request *req)
 {
 	struct ocf_io *io;
@@ -168,7 +176,7 @@ static int ocf_restart_meta_io(struct ocf_request *req)
 
 	io = ocf_new_cache_io(cache);
 	if (!io) {
-		metadata_io_write_i_end_asynch(meta_io_req, -ENOMEM);
+		metadata_io_write_i_asynch_end(meta_io_req, -ENOMEM);
 		return 0;
 	}
 
@@ -178,12 +186,11 @@ static int ocf_restart_meta_io(struct ocf_request *req)
 			PAGES_TO_BYTES(meta_io_req->count),
 			OCF_WRITE, 0, 0);
 
-	ocf_io_set_default_cmpl(io, meta_io_req,
-			metadata_io_write_i_end_asynch);
+	ocf_io_set_cmpl(io, meta_io_req, NULL, metadata_io_write_i_asynch_cmpl);
 	ret = ocf_io_set_data(io, meta_io_req->data, 0);
 	if (ret) {
 		ocf_io_put(io);
-		metadata_io_write_i_end_asynch(meta_io_req, ret);
+		metadata_io_write_i_asynch_end(meta_io_req, ret);
 		return ret;
 	}
 	ocf_dobj_submit_io(io);
@@ -193,9 +200,9 @@ static int ocf_restart_meta_io(struct ocf_request *req)
 /*
  * Iterative asynchronous write callback
  */
-static void metadata_io_write_i_end_asynch(void *private_data, int error)
+static void metadata_io_write_i_asynch_end(struct metadata_io_request *request,
+		int error)
 {
-	struct metadata_io_request *request = (private_data);
 	struct metadata_io_request_asynch *a_req;
 	struct ocf_cache *cache;
 
@@ -359,8 +366,8 @@ int metadata_io_write_i_asynch(struct ocf_cache *cache, uint32_t queue,
 					PAGES_TO_BYTES(a_req->reqs[i].count),
 					OCF_WRITE, 0, 0);
 
-			ocf_io_set_default_cmpl(io, &a_req->reqs[i],
-					metadata_io_write_i_end_asynch);
+			ocf_io_set_cmpl(io, &a_req->reqs[i], NULL,
+					metadata_io_write_i_asynch_cmpl);
 			error = ocf_io_set_data(io, a_req->reqs[i].data, 0);
 			if (error) {
 				ocf_io_put(io);
@@ -448,7 +455,7 @@ out:
 	ctx_data_free(cache->owner, data);
 	ocf_io_put(io);
 
-	if (env_atomic_dec_return(&mio->rq_remaining))
+	if (env_atomic_dec_return(&mio->req_remaining))
 		return;
 
 	env_completion_complete(&mio->completion);
@@ -498,7 +505,7 @@ static int metadata_submit_io(
 		goto free_data;
 
 	/* Submit IO */
-	env_atomic_inc(&mio->rq_remaining);
+	env_atomic_inc(&mio->req_remaining);
 	ocf_dobj_submit_io(io);
 
 	return 0;
@@ -535,7 +542,7 @@ static int metadata_io(struct metadata_io *mio)
 		return -EINVAL;
 	}
 
-	env_atomic_set(&mio->rq_remaining, 1);
+	env_atomic_set(&mio->req_remaining, 1);
 	env_completion_init(&mio->completion);
 
 	while (count) {
@@ -552,7 +559,7 @@ static int metadata_io(struct metadata_io *mio)
 		OCF_COND_RESCHED(step, 128);
 	}
 
-	if (env_atomic_dec_return(&mio->rq_remaining) == 0)
+	if (env_atomic_dec_return(&mio->req_remaining) == 0)
 		env_completion_complete(&mio->completion);
 
 	/* Wait for all IO to be finished */

@@ -24,11 +24,11 @@ static int _ocf_mngt_cache_try_add_core(ocf_cache_t cache, ocf_core_t *core,
 		struct ocf_mngt_core_config *cfg)
 {
 	int result = 0;
-	struct ocf_core *core_obj;
+	ocf_core_t tmp_core;
 	ocf_data_obj_t obj;
 
-	core_obj = &cache->core_obj[cfg->core_id];
-	obj = &core_obj->obj;
+	tmp_core = &cache->core[cfg->core_id];
+	obj = &tmp_core->obj;
 
 	if (ocf_ctx_get_data_obj_type_id(cache->owner, obj->type) !=
 				cfg->data_obj_type) {
@@ -45,12 +45,12 @@ static int _ocf_mngt_cache_try_add_core(ocf_cache_t cache, ocf_core_t *core,
 		goto error_after_open;
 	}
 
-	cache->core_obj[cfg->core_id].opened = true;
+	tmp_core->opened = true;
 
 	if (!(--cache->ocf_core_inactive_count))
 		env_bit_clear(ocf_cache_state_incomplete, &cache->cache_state);
 
-	*core = core_obj;
+	*core = tmp_core;
 	return 0;
 
 error_after_open:
@@ -64,19 +64,19 @@ static int _ocf_mngt_cache_add_core(ocf_cache_t cache, ocf_core_t *core,
 		struct ocf_mngt_core_config *cfg)
 {
 	int result = 0;
-	struct ocf_core *core_obj;
+	ocf_core_t tmp_core;
 	ocf_data_obj_t obj;
 	ocf_seq_no_t core_sequence_no;
 	ocf_cleaning_t clean_type;
 	uint64_t length;
 
-	core_obj = &cache->core_obj[cfg->core_id];
-	obj = &core_obj->obj;
+	tmp_core = &cache->core[cfg->core_id];
+	obj = &tmp_core->obj;
 
-	core_obj->obj.cache = cache;
+	tmp_core->obj.cache = cache;
 
 	/* Set uuid */
-	ocf_uuid_core_set(cache, core_obj, &cfg->uuid);
+	ocf_uuid_core_set(cache, tmp_core, &cfg->uuid);
 
 	obj->type = ocf_ctx_get_data_obj_type(cache->owner, cfg->data_obj_type);
 	if (!obj->type) {
@@ -85,7 +85,7 @@ static int _ocf_mngt_cache_add_core(ocf_cache_t cache, ocf_core_t *core,
 	}
 
 	if (cfg->user_metadata.data && cfg->user_metadata.size > 0) {
-		result = ocf_core_set_user_metadata_raw(core_obj,
+		result = ocf_core_set_user_metadata_raw(tmp_core,
 				cfg->user_metadata.data,
 				cfg->user_metadata.size);
 		if (result)
@@ -113,14 +113,14 @@ static int _ocf_mngt_cache_add_core(ocf_cache_t cache, ocf_core_t *core,
 	}
 
 	/* When adding new core to cache, allocate stat counters */
-	core_obj->counters =
-		env_zalloc(sizeof(*core_obj->counters), ENV_MEM_NORMAL);
-	if (!core_obj->counters) {
+	tmp_core->counters =
+		env_zalloc(sizeof(*tmp_core->counters), ENV_MEM_NORMAL);
+	if (!tmp_core->counters) {
 		result = -OCF_ERR_NO_MEM;
 		goto error_after_clean_pol;
 	}
 	/* When adding new core to cache, reset all core/cache statistics */
-	ocf_stats_init(core_obj);
+	ocf_stats_init(tmp_core);
 	env_atomic_set(&cache->core_runtime_meta[cfg->core_id].
 			cached_clines, 0);
 	env_atomic_set(&cache->core_runtime_meta[cfg->core_id].
@@ -131,7 +131,7 @@ static int _ocf_mngt_cache_add_core(ocf_cache_t cache, ocf_core_t *core,
 	/* In metadata mark data this core was added into cache */
 	env_bit_set(cfg->core_id, cache->conf_meta->valid_object_bitmap);
 	cache->core_conf_meta[cfg->core_id].added = true;
-	cache->core_obj[cfg->core_id].opened = true;
+	tmp_core->opened = true;
 
 	/* Set default cache parameters for sequential */
 	cache->core_conf_meta[cfg->core_id].seq_cutoff_policy =
@@ -154,15 +154,15 @@ static int _ocf_mngt_cache_add_core(ocf_cache_t cache, ocf_core_t *core,
 	}
 
 	/* Increase value of added cores */
-	cache->conf_meta->core_obj_count++;
+	cache->conf_meta->core_count++;
 
-	*core = core_obj;
+	*core = tmp_core;
 	return 0;
 
 error_after_counters_allocation:
 	env_bit_clear(cfg->core_id, cache->conf_meta->valid_object_bitmap);
 	cache->core_conf_meta[cfg->core_id].added = false;
-	cache->core_obj[cfg->core_id].opened = false;
+	tmp_core->opened = false;
 
 	/* An error when flushing metadata, try restore for safety reason
 	 * previous metadata sate on cache device.
@@ -173,8 +173,8 @@ error_after_counters_allocation:
 	 */
 	ocf_metadata_flush_superblock(cache);
 
-	env_free(core_obj->counters);
-	core_obj->counters = NULL;
+	env_free(tmp_core->counters);
+	tmp_core->counters = NULL;
 
 error_after_clean_pol:
 	 if (cleaning_policy_ops[clean_type].remove_core)
@@ -183,40 +183,41 @@ error_after_clean_pol:
 error_after_open:
 	ocf_data_obj_close(obj);
 error_out:
-	ocf_uuid_core_clear(cache, core_obj);
+	ocf_uuid_core_clear(cache, tmp_core);
 	*core = NULL;
 	return result;
 }
 
 static unsigned long _ffz(unsigned long word)
 {
-	asm("rep; bsf %1,%0"
-			: "=r" (word)
-			: "r" (~word));
-	return word;
+	int i;
+
+	for (i = 0; i < sizeof(word)*8 && (word & 1); i++)
+		word <<= 1;
+
+	return i;
 }
 
-static unsigned long _ocf_mngt_find_first_free_core(const unsigned long *bitmap,
-		unsigned long size)
+static unsigned long _ocf_mngt_find_first_free_core(const unsigned long *bitmap)
 {
 	unsigned long i;
-	unsigned long ret = size;
+	unsigned long ret = OCF_CORE_MAX;
 
 	/* check core 0 availability */
 	bool zero_core_free = !(*bitmap & 0x1UL);
 
 	/* check if any core id is free except 0 */
-	for (i = 0; i * sizeof(unsigned long) * 8 < size; i++) {
+	for (i = 0; i * sizeof(unsigned long) * 8 < OCF_CORE_MAX; i++) {
 		unsigned long long ignore_mask = (i == 0) ? 1UL : 0UL;
 		if (~(bitmap[i] | ignore_mask)) {
-			ret = MIN(size, i * sizeof(unsigned long) * 8 +
+			ret = MIN(OCF_CORE_MAX, i * sizeof(unsigned long) * 8 +
 				  _ffz(bitmap[i] | ignore_mask));
 			break;
 		}
 	}
 
 	/* return 0 only if no other core is free */
-	if (ret == size && zero_core_free)
+	if (ret == OCF_CORE_MAX && zero_core_free)
 		return 0;
 
 	return ret;
@@ -228,12 +229,12 @@ static int __ocf_mngt_lookup_core_uuid(ocf_cache_t cache,
 	int i;
 
 	for (i = 0; i < OCF_CORE_MAX; i++) {
-		ocf_core_t core = &cache->core_obj[i];
+		ocf_core_t core = &cache->core[i];
 
 		if (!env_bit_test(i, cache->conf_meta->valid_object_bitmap))
 			continue;
 
-		if (cache->core_obj[i].opened)
+		if (cache->core[i].opened)
 			continue;
 
 		if (ocf_ctx_get_data_obj_type_id(cache->owner, core->obj.type)
@@ -287,11 +288,10 @@ static int __ocf_mngt_find_core_id(ocf_cache_t cache,
 
 		/* Core is unspecified */
 		cfg->core_id = _ocf_mngt_find_first_free_core(
-				cache->conf_meta->valid_object_bitmap,
-				OCF_CORE_MAX);
+				cache->conf_meta->valid_object_bitmap);
 		/* no need to check if find_first_zero_bit failed and
 		 * *core_id == MAX_CORE_OBJS_PER_CACHE, as above there is check
-		 * for core_obj_count being greater or equal to
+		 * for core_count being greater or equal to
 		 * MAX_CORE_OBJS_PER_CACHE
 		 */
 	} else if (cfg->core_id < OCF_CORE_MAX) {
@@ -319,7 +319,7 @@ static int _ocf_mngt_find_core_id(ocf_cache_t cache,
 	int result;
 	ocf_core_id_t tmp_core_id;
 
-	if (cache->conf_meta->core_obj_count >= OCF_CORE_MAX)
+	if (cache->conf_meta->core_count >= OCF_CORE_MAX)
 		return -OCF_ERR_TOO_MANY_CORES;
 
 	tmp_core_id = __ocf_mngt_lookup_core_uuid(cache, cfg);
@@ -351,13 +351,13 @@ int ocf_mngt_cache_add_core_nolock(ocf_cache_t cache, ocf_core_t *core,
 		if (result)
 			return result;
 	} else {
-		result = snprintf(core_name, sizeof(core_name), "%hu",
+		result = snprintf(core_name, sizeof(core_name), "core%hu",
 				cfg->core_id);
 		if (result < 0)
 			return result;
 	}
 
-	result = ocf_core_set_name(&cache->core_obj[cfg->core_id], core_name,
+	result = ocf_core_set_name(&cache->core[cfg->core_id], core_name,
 			sizeof(core_name));
 	if (result)
 		return result;

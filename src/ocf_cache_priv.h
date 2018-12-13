@@ -191,7 +191,7 @@ struct ocf_cache {
 	uint32_t io_queues_no;
 
 	uint16_t ocf_core_inactive_count;
-	struct ocf_core core_obj[OCF_CORE_MAX];
+	struct ocf_core core[OCF_CORE_MAX];
 	struct ocf_core_meta_config *core_conf_meta;
 	struct ocf_core_meta_runtime *core_runtime_meta;
 
@@ -229,11 +229,11 @@ struct ocf_cache {
 };
 
 #define ocf_cache_log_prefix(cache, lvl, prefix, fmt, ...) \
-	ocf_log_prefix(ocf_cache_get_ctx(cache), lvl, "[Cache %s] ", \
-			prefix fmt, ocf_cache_get_name(cache), ##__VA_ARGS__)
+	ocf_log_prefix(ocf_cache_get_ctx(cache), lvl, "%s" prefix, \
+			fmt, ocf_cache_get_name(cache), ##__VA_ARGS__)
 
 #define ocf_cache_log(cache, lvl, fmt, ...) \
-	ocf_cache_log_prefix(cache, lvl, "", fmt, ##__VA_ARGS__)
+	ocf_cache_log_prefix(cache, lvl, ": ", fmt, ##__VA_ARGS__)
 
 #define ocf_cache_log_rl(cache) \
 	ocf_log_rl(ocf_cache_get_ctx(cache))
