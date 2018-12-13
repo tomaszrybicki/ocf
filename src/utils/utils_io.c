@@ -233,7 +233,7 @@ void ocf_submit_cache_reqs(struct ocf_cache *cache,
 {
 	struct ocf_counters_block *cache_stats;
 	uint64_t flags = req->io ? req->io->flags : 0;
-	uint32_t class = req->io ? req->io->class : 0;
+	uint32_t class = req->io ? req->io->io_class : 0;
 	uint64_t addr, bytes, total_bytes = 0;
 	struct ocf_io *io;
 	uint32_t i;
@@ -331,7 +331,7 @@ void ocf_submit_obj_req(ocf_data_obj_t obj, struct ocf_request *rq,
 	struct ocf_cache *cache = rq->cache;
 	struct ocf_counters_block *core_stats;
 	uint64_t flags = rq->io ? rq->io->flags : 0;
-	uint32_t class = rq->io ? rq->io->class : 0;
+	uint32_t class = rq->io ? rq->io->io_class : 0;
 	struct ocf_io *io;
 	int err;
 
