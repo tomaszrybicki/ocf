@@ -87,7 +87,7 @@ int ocf_mgnt_start_trace(ocf_cache_t cache, void *trace_ctx,
 		return result;
 
 	if (cache->trace.trace_callback) {
-		ocf_cache_log(cache->owner, log_err,
+		ocf_cache_log(cache, log_err,
 				"Tracing already started for cache %u\n",
 				ocf_cache_get_id(cache));
 		ocf_mngt_cache_unlock(cache);
@@ -103,7 +103,7 @@ int ocf_mgnt_start_trace(ocf_cache_t cache, void *trace_ctx,
 			goto trace_deinit;
 	}
 
-	ocf_cache_log(cache->owner, log_info,
+	ocf_cache_log(cache, log_info,
 			"Tracing started for cache %u\n", ocf_cache_get_id(cache));
 
 	ocf_mngt_cache_unlock(cache);
@@ -126,7 +126,7 @@ int ocf_mgnt_stop_trace(ocf_cache_t cache)
 		return result;
 
 	if (!cache->trace.trace_callback) {
-		ocf_cache_log(cache->owner, log_err,
+		ocf_cache_log(cache, log_err,
 				"Tracing not started for cache %u\n",
 				ocf_cache_get_id(cache));
 		ocf_mngt_cache_unlock(cache);
@@ -155,7 +155,6 @@ int ocf_mgnt_stop_trace(ocf_cache_t cache)
 	cache->trace.trace_callback = NULL;
 	cache->trace.trace_ctx = NULL;
 
-exit:
 	env_atomic_dec(&cache->trace.stop_trace_pending);
 	ocf_mngt_cache_unlock(cache);
 
