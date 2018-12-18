@@ -7,7 +7,6 @@
 #define __OCF_REQUEST_H__
 
 #include "ocf_env.h"
-#include "ocf/ocf_trace.h"
 
 struct ocf_req_info {
 	/* Number of hits, invalid, misses. */

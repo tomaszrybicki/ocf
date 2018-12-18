@@ -63,8 +63,10 @@ static inline void ocf_trace_push(ocf_cache_t cache, uint32_t io_queue,
 
 	env_atomic64_inc(&cache->io_queues[io_queue].trace_ref_cntr);
 
-	/* Double stop_trace_pending flag check prevents from using
-	   callback when traces are being stopped */
+	/*
+	 * Double stop_trace_pending flag check prevents from using
+	 * callback when traces are being stopped
+	 */
 	if (!env_atomic_read(&cache->trace.stop_trace_pending) &&
 		cache->trace.trace_callback) {
 		cache->trace.trace_callback(cache, cache->trace.trace_ctx,

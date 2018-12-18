@@ -434,8 +434,10 @@ int ocf_submit_io_mode(struct ocf_io *io, ocf_cache_mode_t cache_mode)
 
 	ocf_core_update_stats(core, io);
 
-	ocf_trace_io(core_io,
-			io->dir ? OCF_WRITE : OCF_READ);
+	if (io->dir == OCF_WRITE)
+		ocf_trace_io(core_io, ocf_event_operation_wr);
+	else if (io->dir == OCF_READ)
+		ocf_trace_io(core_io, ocf_event_operation_rd);
 
 	ocf_core_io_get(io);
 	ret = ocf_engine_hndl_req(core_io->req, req_cache_mode);
@@ -529,8 +531,10 @@ int ocf_submit_io_fast(struct ocf_io *io)
 	ocf_core_update_stats(core, io);
 
 	if (cache->trace.trace_callback) {
-		ocf_trace_prep_io_event(&trace_event, core_io,
-				io->dir ? OCF_WRITE : OCF_READ);
+		if (io->dir == OCF_WRITE)
+			ocf_trace_prep_io_event(&trace_event, core_io, ocf_event_operation_wr);
+		else if (io->dir == OCF_READ)
+			ocf_trace_prep_io_event(&trace_event, core_io, ocf_event_operation_rd);
 	}
 
 	ocf_core_io_get(io);
